@@ -173,7 +173,20 @@ def gerar_resposta(prompt):
         return f"Erro: o run terminou com status {run.status}", []
 
 # Interface do usuário
-st.title("💬 Azul UX - Assistente")
+import streamlit as st
+from openai import OpenAI
+import time
+import re
+from datetime import datetime
+import json
+import os
+
+# [O restante das importações e configurações permanecem iguais]
+
+# ... [O código anterior permanece o mesmo até a parte da interface do usuário]
+
+# Interface do usuário
+st.title("💬 Assistente GPT")
 
 # Botão de debug no sidebar
 with st.sidebar:
@@ -185,30 +198,49 @@ tab1, tab2 = st.tabs(["Chat", "Respostas Favoritas"])
 with tab1:
     st.subheader("Seu assistente personalizado")
     
-    prompt_usuario = st.chat_input("Digite sua mensagem aqui...")
-
+    # Criar um container para as mensagens
+    chat_container = st.container()
+    
+    # Criar um container separado para o campo de entrada
+    input_container = st.container()
+    
+    # Usar o container de entrada para o campo de prompt
+    with input_container:
+        prompt_usuario = st.chat_input("Digite sua mensagem aqui...")
+    
+    # Processar a entrada do usuário
     if prompt_usuario:
         st.session_state.messages.append({"role": "user", "content": prompt_usuario, "citations": []})
         
         with st.spinner('Gerando resposta...'):
             resposta, citations = gerar_resposta(prompt_usuario)
         st.session_state.messages.append({"role": "assistant", "content": resposta, "citations": citations})
-
-    for i, msg in enumerate(st.session_state.messages):
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-            if msg["citations"]:
-                st.divider()
-                st.caption("Referências:")
-                for citation in msg["citations"]:
-                    st.caption(citation)
-            
-            if msg["role"] == "assistant" and i > 0:
-                if st.button(f"⭐ Salvar como favorito", key=f"fav_{i}"):
-                    prompt_anterior = st.session_state.messages[i-1]["content"]
-                    if salvar_resposta_favorita(prompt_anterior, msg["content"], msg["citations"]):
-                        st.toast("Resposta salva nos favoritos!", icon="⭐")
-
+        
+        # Recarregar a página para mostrar a nova mensagem
+        st.rerun()
+    
+    # Exibir mensagens no container de chat
+    with chat_container:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+                if msg["citations"]:
+                    st.divider()
+                    st.caption("Referências:")
+                    for citation in msg["citations"]:
+                        st.caption(citation)
+                
+                # Botão de salvar favorito para respostas do assistente
+                if msg["role"] == "assistant":
+                    if st.button(f"⭐ Salvar como favorito", key=f"fav_{msg['content'][:10]}"):
+                        # Encontrar o prompt correspondente (a mensagem do usuário anterior)
+                        index = st.session_state.messages.index(msg)
+                        if index > 0 and st.session_state.messages[index-1]["role"] == "user":
+                            prompt_anterior = st.session_state.messages[index-1]["content"]
+                            if salvar_resposta_favorita(prompt_anterior, msg["content"], msg["citations"]):
+                                st.toast("Resposta salva nos favoritos!", icon="⭐")
+    
+    # Botão para limpar conversa (mantido fora dos containers para fácil acesso)
     if st.button("Limpar Conversa"):
         st.session_state.messages = []
         st.session_state.thread_id = None
