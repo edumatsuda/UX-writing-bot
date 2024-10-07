@@ -3,7 +3,7 @@ from openai import OpenAI
 import time
 
 # Configuração da página
-st.set_page_config(page_title="Assistente GPT", page_icon="🤖")
+st.set_page_config(page_title="Azul UX - Assistente", page_icon="🤖")
 
 # Inicialização da sessão state
 if 'client' not in st.session_state:
@@ -61,7 +61,7 @@ def gerar_resposta(prompt):
         return f"Erro: o run terminou com status {run.status}"
 
 # Interface do usuário
-st.title("💬 Assistente GPT")
+st.title("💬 Azul UX - Assistente")
 st.subheader("Seu assistente personalizado")
 
 # Campo de entrada
