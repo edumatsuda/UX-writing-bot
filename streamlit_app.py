@@ -33,7 +33,7 @@ def salvar_favoritos_no_arquivo(favoritos):
 
 # Inicialização da sessão state
 if 'client' not in st.session_state:
-    st.session_state.client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    st.session_state.client = OpenAI(api_key=st.secrets["OPENAI_KEY"])
 
 if 'thread_id' not in st.session_state:
     st.session_state.thread_id = None
