@@ -1,9 +1,35 @@
 import streamlit as st
 from openai import OpenAI
 import time
+import re
+from datetime import datetime
+import json
+import os
 
 # Configuração da página
-st.set_page_config(page_title="Azul UX - Assistente", page_icon="🤖")
+st.set_page_config(page_title="Azul UX - Assistente", page_icon="🤖", layout="wide")
+
+# Constantes
+FAVORITOS_FILE = "favoritos.json"
+DEFAULT_TAGS = ["gramática", "clareza", "tom", "estrutura", "outro"]
+
+# Funções de gerenciamento de arquivos
+def carregar_favoritos_do_arquivo():
+    if os.path.exists(FAVORITOS_FILE):
+        try:
+            with open(FAVORITOS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            st.error(f"Erro ao carregar favoritos do arquivo {FAVORITOS_FILE}")
+            return []
+    return []
+
+def salvar_favoritos_no_arquivo(favoritos):
+    try:
+        with open(FAVORITOS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(favoritos, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"Erro ao salvar favoritos: {str(e)}")
 
 # Inicialização da sessão state
 if 'client' not in st.session_state:
@@ -15,32 +41,98 @@ if 'thread_id' not in st.session_state:
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# Configuração do Assistente
-ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"  # Coloque seu Assistant ID aqui
+if 'favoritos' not in st.session_state:
+    st.session_state.favoritos = carregar_favoritos_do_arquivo()
 
+# Configuração do Assistente
+ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"
+
+def extrair_secoes(texto):
+    secoes = {}
+    padrao_original = r'Original:\s*\n?(.*?)(?=\n*[A-Za-z]+:|$)'
+    padrao_sugestao = r'Sugestão:\s*\n?(.*?)(?=\n*[A-Za-z]+:|$)'
+    
+    original = re.search(padrao_original, texto, re.DOTALL)
+    sugestao = re.search(padrao_sugestao, texto, re.DOTALL)
+    
+    if original:
+        secoes['Original'] = original.group(1).strip()
+    if sugestao:
+        secoes['Sugestão'] = sugestao.group(1).strip()
+    
+    return secoes
+
+def salvar_resposta_favorita(prompt, resposta_completa, citations):
+    secoes = extrair_secoes(resposta_completa)
+    
+    if not secoes:
+        st.warning("Não foi possível encontrar as seções Original e Sugestão na resposta.")
+        return False
+    
+    # Criar um ID único baseado no timestamp
+    favorito_id = str(int(time.time()))
+    
+    favorito = {
+        "id": favorito_id,
+        "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "prompt": prompt,
+        "original": secoes.get('Original', ''),
+        "sugestao": secoes.get('Sugestão', ''),
+        "citations": citations,
+        "tags": []
+    }
+    
+    st.session_state.favoritos.append(favorito)
+    salvar_favoritos_no_arquivo(st.session_state.favoritos)
+    return favorito_id
+
+def atualizar_tags(favorito_id, novas_tags):
+    for fav in st.session_state.favoritos:
+        if fav["id"] == favorito_id:
+            fav["tags"] = novas_tags
+            salvar_favoritos_no_arquivo(st.session_state.favoritos)
+            break
+
+# Funções existentes mantidas como estão
 def criar_thread():
     if st.session_state.thread_id is None:
         thread = st.session_state.client.beta.threads.create()
         st.session_state.thread_id = thread.id
     return st.session_state.thread_id
 
+def processar_mensagem_assistente(message):
+    texto_principal = message.content[0].text.value
+    annotations = message.content[0].text.annotations
+    citations = []
+    
+    if annotations:
+        for index, annotation in enumerate(annotations):
+            if hasattr(annotation, 'file_citation'):
+                citation_text = annotation.text
+                file_citation = annotation.file_citation
+                cited_file = st.session_state.client.files.retrieve(file_citation.file_id)
+                citations.append(f"{index + 1}. {citation_text} [Arquivo: {cited_file.filename}]")
+            elif hasattr(annotation, 'file_path'):
+                file_path = annotation.file_path
+                cited_file = st.session_state.client.files.retrieve(file_path.file_id)
+                citations.append(f"{index + 1}. Referência ao arquivo: {cited_file.filename}")
+    
+    return texto_principal, citations
+
 def gerar_resposta(prompt):
     thread_id = criar_thread()
     
-    # Adicionar a mensagem do usuário à thread
     st.session_state.client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=prompt
     )
     
-    # Executar o assistente
     run = st.session_state.client.beta.threads.runs.create(
         thread_id=thread_id,
         assistant_id=ASSISTANT_ID
     )
     
-    # Esperar pela resposta
     while run.status in ["queued", "in_progress"]:
         time.sleep(0.5)
         run = st.session_state.client.beta.threads.runs.retrieve(
@@ -49,43 +141,122 @@ def gerar_resposta(prompt):
         )
     
     if run.status == "completed":
-        # Buscar as mensagens mais recentes
         messages = st.session_state.client.beta.threads.messages.list(
             thread_id=thread_id
         )
-        
-        # A primeira mensagem é a mais recente
-        assistant_message = messages.data[0].content[0].text.value
-        return assistant_message
+        return processar_mensagem_assistente(messages.data[0])
     else:
-        return f"Erro: o run terminou com status {run.status}"
+        return f"Erro: o run terminou com status {run.status}", []
 
 # Interface do usuário
 st.title("💬 Azul UX - Assistente")
-st.subheader("Seu assistente personalizado")
 
-# Campo de entrada
-prompt_usuario = st.chat_input("Digite sua mensagem aqui...")
+# Criação de abas
+tab1, tab2 = st.tabs(["Chat", "Respostas Favoritas"])
 
-# Quando o usuário envia uma mensagem
-if prompt_usuario:
-    # Adicionar mensagem do usuário ao histórico local
-    st.session_state.messages.append({"role": "user", "content": prompt_usuario})
+with tab1:
+    st.subheader("Seu assistente personalizado")
     
-    # Gerar e adicionar resposta do assistente
-    with st.spinner('Gerando resposta...'):
-        resposta = gerar_resposta(prompt_usuario)
-    st.session_state.messages.append({"role": "assistant", "content": resposta})
+    prompt_usuario = st.chat_input("Digite sua mensagem aqui...")
 
-# Exibir histórico de mensagens
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.chat_message("user").write(msg["content"])
+    if prompt_usuario:
+        st.session_state.messages.append({"role": "user", "content": prompt_usuario, "citations": []})
+        
+        with st.spinner('Gerando resposta...'):
+            resposta, citations = gerar_resposta(prompt_usuario)
+        st.session_state.messages.append({"role": "assistant", "content": resposta, "citations": citations})
+
+    for i, msg in enumerate(st.session_state.messages):
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            if msg["citations"]:
+                st.divider()
+                st.caption("Referências:")
+                for citation in msg["citations"]:
+                    st.caption(citation)
+            
+            if msg["role"] == "assistant" and i > 0:
+                if st.button(f"⭐ Salvar como favorito", key=f"fav_{i}"):
+                    prompt_anterior = st.session_state.messages[i-1]["content"]
+                    if salvar_resposta_favorita(prompt_anterior, msg["content"], msg["citations"]):
+                        st.toast("Resposta salva nos favoritos!", icon="⭐")
+
+    if st.button("Limpar Conversa"):
+        st.session_state.messages = []
+        st.session_state.thread_id = None
+        st.rerun()
+
+with tab2:
+    st.subheader("Respostas Favoritas")
+    
+    # Filtro por tags
+    todas_tags = set()
+    for fav in st.session_state.favoritos:
+        todas_tags.update(fav.get("tags", []))
+    todas_tags = sorted(list(todas_tags))
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        tags_selecionadas = st.multiselect("Filtrar por tags:", todas_tags)
+    
+    with col2:
+        opcao_ordenacao = st.selectbox("Ordenar por:", ["Mais recente", "Mais antigo"])
+    
+    favoritos_filtrados = [
+        fav for fav in st.session_state.favoritos
+        if not tags_selecionadas or any(tag in fav.get("tags", []) for tag in tags_selecionadas)
+    ]
+    
+    if opcao_ordenacao == "Mais antigo":
+        favoritos_filtrados.reverse()
+    
+    if not favoritos_filtrados:
+        st.info("Ainda não há respostas favoritas salvas. Use o botão ⭐ no chat para salvar respostas!")
     else:
-        st.chat_message("assistant").write(msg["content"])
-
-# Botão para limpar conversa
-if st.button("Limpar Conversa"):
-    st.session_state.messages = []
-    st.session_state.thread_id = None
-    st.rerun()
+        for fav in favoritos_filtrados:
+            with st.expander(f"Favorito - {fav['data']}"):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.subheader("Pergunta:")
+                    st.write(fav["prompt"])
+                    if fav["original"]:
+                        st.subheader("Original:")
+                        st.write(fav["original"])
+                    if fav["sugestao"]:
+                        st.subheader("Sugestão:")
+                        st.write(fav["sugestao"])
+                
+                with col2:
+                    # Gerenciamento de tags
+                    st.subheader("Tags")
+                    tags_atuais = set(fav.get("tags", []))
+                    
+                    for tag in DEFAULT_TAGS:
+                        if st.checkbox(tag, value=tag in tags_atuais, key=f"{fav['id']}_{tag}"):
+                            tags_atuais.add(tag)
+                        else:
+                            tags_atuais.discard(tag)
+                    
+                    # Campo para adicionar nova tag
+                    nova_tag = st.text_input("Nova tag:", key=f"new_tag_{fav['id']}")
+                    if st.button("Adicionar Tag", key=f"add_tag_{fav['id']}"):
+                        if nova_tag and nova_tag not in tags_atuais:
+                            tags_atuais.add(nova_tag)
+                    
+                    # Atualizar tags no favorito
+                    if st.button("Salvar Tags", key=f"save_tags_{fav['id']}"):
+                        atualizar_tags(fav['id'], list(tags_atuais))
+                        st.toast("Tags atualizadas!", icon="✅")
+                
+                if fav["citations"]:
+                    st.divider()
+                    st.caption("Referências:")
+                    for citation in fav["citations"]:
+                        st.caption(citation)
+        
+        if st.button("Limpar Favoritos"):
+            if st.checkbox("Confirmar exclusão de todos os favoritos"):
+                st.session_state.favoritos = []
+                salvar_favoritos_no_arquivo([])
+                st.rerun()
