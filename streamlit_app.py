@@ -16,7 +16,7 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # Configuração do Assistente
-ASSISTANT_ID = "seu-assistant-id-aqui"  # Coloque seu Assistant ID aqui
+ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"  # Coloque seu Assistant ID aqui
 
 def criar_thread():
     if st.session_state.thread_id is None:
