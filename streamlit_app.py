@@ -44,8 +44,8 @@ if 'messages' not in st.session_state:
 if 'favoritos' not in st.session_state:
     st.session_state.favoritos = carregar_favoritos_do_arquivo()
 
-if 'debug_mode' not in st.session_state:
-    st.session_state.debug_mode = False
+# if 'debug_mode' not in st.session_state:
+#     st.session_state.debug_mode = False
 
 # Configuração do Assistente
 ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"
@@ -73,9 +73,9 @@ def extrair_conteudo(texto):
         conteudo['Conteúdo Completo'] = texto.strip()
     
     # Log para debug
-    if st.session_state.debug_mode:
-        st.write("Texto recebido para extração:", texto)
-        st.write("Conteúdo encontrado:", conteudo)
+    # if st.session_state.debug_mode:
+    #     st.write("Texto recebido para extração:", texto)
+    #     st.write("Conteúdo encontrado:", conteudo)
     
     return conteudo
 
@@ -163,8 +163,8 @@ def gerar_resposta(prompt):
 st.title("💬Azul UX - Assistente")
 
 # Botão de debug no sidebar
-with st.sidebar:
-    st.session_state.debug_mode = st.checkbox("Modo Debug", value=st.session_state.debug_mode)
+# with st.sidebar:
+#     st.session_state.debug_mode = st.checkbox("Modo Debug", value=st.session_state.debug_mode)
 
 # Criação de abas
 tab1, tab2 = st.tabs(["Chat", "Respostas Favoritas"])
