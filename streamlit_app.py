@@ -33,7 +33,7 @@ def salvar_favoritos_no_arquivo(favoritos):
 
 # Inicialização da sessão state
 if 'client' not in st.session_state:
-    st.session_state.client = OpenAI(api_key=st.secrets["OPENAI_KEY"])
+    st.session_state.client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 if 'thread_id' not in st.session_state:
     st.session_state.thread_id = None
@@ -50,49 +50,37 @@ if 'debug_mode' not in st.session_state:
 # Configuração do Assistente
 ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"
 
-def extrair_secoes(texto):
-    """Extrai as seções 'Original' e 'Sugestão' do texto em formato Markdown"""
-    secoes = {}
+def extrair_conteudo(texto):
+    """Extrai o conteúdo relevante do texto da resposta"""
+    conteudo = {}
     
-    # Múltiplos padrões para maior flexibilidade
-    padroes_original = [
-        r'\*\*Original\*\*:\s*"([^"]+)"',
-        r'\*\*Original\*\*:\s*(.+?)(?=\n|$)',
-    ]
-    padroes_sugestao = [
-        r'\*\*Sugestão\*\*:\s*"([^"]+)"',
-        r'\*\*Sugestão\*\*:\s*(.+?)(?=\n|$)',
-    ]
+    # Padrões para diferentes tipos de conteúdo
+    padroes = {
+        'Original': r'\*\*Original\*\*:\s*"?([^"]+)"?',
+        'Sugestão': r'\*\*Sugestão\*\*:\s*"?([^"]+)"?',
+        'Resposta': r'\*\*Resposta\*\*:\s*"?([^"]+)"?',
+        'Conteúdo': r'\*\*Conteúdo\*\*:\s*"?([^"]+)"?'
+    }
     
-    # Tentar cada padrão para Original
-    for padrao in padroes_original:
-        match = re.search(padrao, texto, re.DOTALL)
+    # Tentar extrair cada tipo de conteúdo
+    for chave, padrao in padroes.items():
+        match = re.search(padrao, texto, re.DOTALL | re.IGNORECASE)
         if match:
-            secoes['Original'] = match.group(1).strip()
-            break
+            conteudo[chave] = match.group(1).strip()
     
-    # Tentar cada padrão para Sugestão
-    for padrao in padroes_sugestao:
-        match = re.search(padrao, texto, re.DOTALL)
-        if match:
-            secoes['Sugestão'] = match.group(1).strip()
-            break
+    # Se nenhuma seção específica for encontrada, salvar o texto completo
+    if not conteudo:
+        conteudo['Conteúdo Completo'] = texto.strip()
     
     # Log para debug
     if st.session_state.debug_mode:
         st.write("Texto recebido para extração:", texto)
-        st.write("Seções encontradas:", secoes)
+        st.write("Conteúdo encontrado:", conteudo)
     
-    return secoes
+    return conteudo
 
 def salvar_resposta_favorita(prompt, resposta_completa, citations):
-    secoes = extrair_secoes(resposta_completa)
-    
-    if not secoes:
-        st.warning("Não foi possível encontrar as seções Original e Sugestão na resposta.")
-        if st.session_state.debug_mode:
-            st.write("Resposta completa que não pôde ser processada:", resposta_completa)
-        return False
+    conteudo = extrair_conteudo(resposta_completa)
     
     favorito_id = str(int(time.time()))
     
@@ -100,8 +88,7 @@ def salvar_resposta_favorita(prompt, resposta_completa, citations):
         "id": favorito_id,
         "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "prompt": prompt,
-        "original": secoes.get('Original', ''),
-        "sugestao": secoes.get('Sugestão', ''),
+        "conteudo": conteudo,
         "citations": citations,
         "tags": []
     }
@@ -173,20 +160,7 @@ def gerar_resposta(prompt):
         return f"Erro: o run terminou com status {run.status}", []
 
 # Interface do usuário
-import streamlit as st
-from openai import OpenAI
-import time
-import re
-from datetime import datetime
-import json
-import os
-
-# [O restante das importações e configurações permanecem iguais]
-
-# ... [O código anterior permanece o mesmo até a parte da interface do usuário]
-
-# Interface do usuário
-st.title("💬 Assistente GPT")
+st.title("💬Azul UX - Assistente")
 
 # Botão de debug no sidebar
 with st.sidebar:
@@ -280,12 +254,9 @@ with tab2:
                 with col1:
                     st.subheader("Pergunta:")
                     st.write(fav["prompt"])
-                    if fav["original"]:
-                        st.subheader("Original:")
-                        st.write(fav["original"])
-                    if fav["sugestao"]:
-                        st.subheader("Sugestão:")
-                        st.write(fav["sugestao"])
+                    for chave, valor in fav["conteudo"].items():
+                        st.subheader(f"{chave}:")
+                        st.write(valor)
                 
                 with col2:
                     # Gerenciamento de tags
