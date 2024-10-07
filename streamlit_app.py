@@ -44,21 +44,44 @@ if 'messages' not in st.session_state:
 if 'favoritos' not in st.session_state:
     st.session_state.favoritos = carregar_favoritos_do_arquivo()
 
+if 'debug_mode' not in st.session_state:
+    st.session_state.debug_mode = False
+
 # Configuração do Assistente
 ASSISTANT_ID = "asst_2gdW0pdYhNLEl0Kp9BIQankx"
 
 def extrair_secoes(texto):
+    """Extrai as seções 'Original' e 'Sugestão' do texto em formato Markdown"""
     secoes = {}
-    padrao_original = r'Original:\s*\n?(.*?)(?=\n*[A-Za-z]+:|$)'
-    padrao_sugestao = r'Sugestão:\s*\n?(.*?)(?=\n*[A-Za-z]+:|$)'
     
-    original = re.search(padrao_original, texto, re.DOTALL)
-    sugestao = re.search(padrao_sugestao, texto, re.DOTALL)
+    # Múltiplos padrões para maior flexibilidade
+    padroes_original = [
+        r'\*\*Original\*\*:\s*"([^"]+)"',
+        r'\*\*Original\*\*:\s*(.+?)(?=\n|$)',
+    ]
+    padroes_sugestao = [
+        r'\*\*Sugestão\*\*:\s*"([^"]+)"',
+        r'\*\*Sugestão\*\*:\s*(.+?)(?=\n|$)',
+    ]
     
-    if original:
-        secoes['Original'] = original.group(1).strip()
-    if sugestao:
-        secoes['Sugestão'] = sugestao.group(1).strip()
+    # Tentar cada padrão para Original
+    for padrao in padroes_original:
+        match = re.search(padrao, texto, re.DOTALL)
+        if match:
+            secoes['Original'] = match.group(1).strip()
+            break
+    
+    # Tentar cada padrão para Sugestão
+    for padrao in padroes_sugestao:
+        match = re.search(padrao, texto, re.DOTALL)
+        if match:
+            secoes['Sugestão'] = match.group(1).strip()
+            break
+    
+    # Log para debug
+    if st.session_state.debug_mode:
+        st.write("Texto recebido para extração:", texto)
+        st.write("Seções encontradas:", secoes)
     
     return secoes
 
@@ -67,9 +90,10 @@ def salvar_resposta_favorita(prompt, resposta_completa, citations):
     
     if not secoes:
         st.warning("Não foi possível encontrar as seções Original e Sugestão na resposta.")
+        if st.session_state.debug_mode:
+            st.write("Resposta completa que não pôde ser processada:", resposta_completa)
         return False
     
-    # Criar um ID único baseado no timestamp
     favorito_id = str(int(time.time()))
     
     favorito = {
@@ -93,7 +117,7 @@ def atualizar_tags(favorito_id, novas_tags):
             salvar_favoritos_no_arquivo(st.session_state.favoritos)
             break
 
-# Funções existentes mantidas como estão
+# Funções do Assistente
 def criar_thread():
     if st.session_state.thread_id is None:
         thread = st.session_state.client.beta.threads.create()
@@ -150,6 +174,10 @@ def gerar_resposta(prompt):
 
 # Interface do usuário
 st.title("💬 Azul UX - Assistente")
+
+# Botão de debug no sidebar
+with st.sidebar:
+    st.session_state.debug_mode = st.checkbox("Modo Debug", value=st.session_state.debug_mode)
 
 # Criação de abas
 tab1, tab2 = st.tabs(["Chat", "Respostas Favoritas"])
