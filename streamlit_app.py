@@ -160,6 +160,7 @@ def gerar_resposta(prompt):
         return f"Erro: o run terminou com status {run.status}", []
 
 # Interface do usuário
+st.image('img/Circular.svg')
 st.title("💬Azul UX - Assistente")
 
 # Botão de debug no sidebar
